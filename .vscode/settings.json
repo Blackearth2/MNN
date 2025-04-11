@@ -1,0 +1,14 @@
+{
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.default.includePath": [
+      "${workspaceFolder}/**",
+      "/usr/include",
+      "/usr/local/include"
+    ],
+    "C_Cpp.default.defines": [],
+    "files.associations": {
+      "stdlib.h": "c",
+      "socket": "c",
+      "string.h": "c"
+    }
+}
