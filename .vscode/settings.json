@@ -5,5 +5,10 @@
       "/usr/include",
       "/usr/local/include"
     ],
-    "C_Cpp.default.defines": []
+    "C_Cpp.default.defines": [],
+    "files.associations": {
+      "stdlib.h": "c",
+      "socket": "c",
+      "string.h": "c"
+    }
 }
