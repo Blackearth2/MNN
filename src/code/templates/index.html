@@ -1,0 +1,991 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Neural Network Trainer</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;600&family=Syne:wght@700;800&display=swap');
+:root{
+  --bg:#08090c; --panel:#0d0f16; --panel2:#111420;
+  --border:#1a1f2e; --border2:#242a3a;
+  --accent:#00e5a0; --accent2:#ff6b35; --blue:#4da6ff; --amber:#ffb300; --danger:#ff4757;
+  --text:#c4cfe0; --muted:#3d4560; --muted2:#5a6480;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:'JetBrains Mono',monospace;overflow:hidden}
+
+/* ── Layout ── */
+.app{display:grid;grid-template-rows:52px 1fr;height:100vh}
+header{display:flex;align-items:center;gap:14px;padding:0 24px;border-bottom:1px solid var(--border);
+       background:linear-gradient(90deg,#08090c,#0d1220);z-index:10}
+.logo{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:#fff;letter-spacing:-.5px}
+.logo em{color:var(--accent);font-style:normal}
+.hbar{flex:1}
+.status-pill{display:flex;align-items:center;gap:7px;font-size:10px;letter-spacing:.1em;
+             text-transform:uppercase;padding:4px 12px;border-radius:20px;
+             border:1px solid var(--border);color:var(--muted2);transition:all .3s}
+.status-pill .dot{width:6px;height:6px;border-radius:50%;background:var(--muted)}
+.status-pill.running{border-color:var(--accent);color:var(--accent)}
+.status-pill.running .dot{background:var(--accent);animation:blink 1s infinite}
+.status-pill.done{border-color:var(--blue);color:var(--blue)}.status-pill.done .dot{background:var(--blue)}
+.status-pill.error{border-color:var(--danger);color:var(--danger)}.status-pill.error .dot{background:var(--danger)}
+@keyframes blink{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.3;transform:scale(1.6)}}
+
+.body{display:grid;grid-template-columns:300px 1fr;overflow:hidden}
+
+/* ── Sidebar ── */
+.sidebar{border-right:1px solid var(--border);display:flex;flex-direction:column;
+         overflow-y:auto;overflow-x:hidden;background:var(--panel)}
+.sidebar::-webkit-scrollbar{width:3px}
+.sidebar::-webkit-scrollbar-thumb{background:var(--border2)}
+
+/* Accordion section */
+.acc{border-bottom:1px solid var(--border)}
+.acc-head{display:flex;align-items:center;gap:8px;padding:11px 16px;cursor:pointer;
+          user-select:none;transition:background .15s}
+.acc-head:hover{background:rgba(255,255,255,.02)}
+.acc-title{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted2);flex:1}
+.acc-arrow{font-size:10px;color:var(--muted);transition:transform .25s;line-height:1}
+.acc.open .acc-arrow{transform:rotate(90deg);color:var(--accent)}
+.acc-body{display:none;padding:0 16px 14px}
+.acc.open .acc-body{display:block}
+
+/* Form elements */
+label{display:block;font-size:10px;color:var(--muted2);margin:9px 0 3px}
+label:first-of-type{margin-top:0}
+input[type=number],select{width:100%;background:#060710;border:1px solid var(--border);
+  color:var(--text);padding:6px 9px;font-family:inherit;font-size:11px;border-radius:3px;outline:none;
+  transition:border-color .2s}
+input[type=number]:focus,select:focus{border-color:var(--accent)}
+input[type=range]{width:100%;accent-color:var(--accent);cursor:pointer}
+.rv{font-size:11px;color:var(--accent);float:right}
+
+.ds-tabs{display:flex;gap:3px;margin-bottom:8px}
+.ds-tab{flex:1;padding:5px;font-family:inherit;font-size:10px;border:1px solid var(--border);
+        background:transparent;color:var(--muted2);border-radius:3px;cursor:pointer;transition:all .2s;text-align:center}
+.ds-tab.active{border-color:var(--accent);color:var(--accent);background:rgba(0,229,160,.05)}
+.ds-panel{display:none}.ds-panel.active{display:block}
+.hint{font-size:10px;color:var(--muted);line-height:1.6;margin-top:6px;padding:6px 8px;
+      background:#060710;border-radius:3px;border:1px solid var(--border)}
+.hint code{color:var(--accent)}
+
+.layers-list{display:flex;flex-direction:column;gap:5px;margin-bottom:8px}
+.lr{display:flex;align-items:center;gap:5px;background:#060710;
+    border:1px solid var(--border);border-radius:3px;padding:6px 7px;animation:si .2s}
+@keyframes si{from{opacity:0;transform:translateY(-5px)}to{opacity:1;transform:none}}
+.lr .li{font-size:9px;color:var(--muted);width:16px;flex-shrink:0}
+.lr input{flex:1;min-width:0;background:transparent;border:none;
+          border-bottom:1px solid var(--border);border-radius:0;padding:2px 3px;
+          color:var(--text);font-size:11px;font-family:inherit}
+.lr input:focus{border-color:var(--accent);outline:none}
+.lr select{flex:1;padding:2px 3px;font-size:10px;min-width:0}
+.lr .xb{width:18px;height:18px;border:none;background:transparent;color:var(--danger);
+        cursor:pointer;font-size:13px;display:flex;align-items:center;justify-content:center;
+        border-radius:2px;flex-shrink:0}
+.lr .xb:hover{background:rgba(255,71,87,.12)}
+.lrf{opacity:.35;pointer-events:none}
+.add-lb{width:100%;padding:6px;border:1px dashed var(--border);background:transparent;
+        color:var(--muted);cursor:pointer;font-family:inherit;font-size:10px;border-radius:3px;transition:all .2s}
+.add-lb:hover{border-color:var(--accent);color:var(--accent)}
+
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;padding:9px 14px;
+     border-radius:3px;cursor:pointer;font-family:inherit;font-size:11px;font-weight:600;
+     letter-spacing:.04em;border:1px solid;transition:all .2s}
+.btn-p{background:var(--accent);border-color:var(--accent);color:#000}
+.btn-p:hover{background:#00ffb3}.btn-p:disabled{opacity:.3;cursor:not-allowed}
+.btn-d{background:transparent;border-color:var(--danger);color:var(--danger)}
+.btn-d:hover{background:rgba(255,71,87,.1)}.btn-d:disabled{opacity:.25;cursor:not-allowed}
+.btn-row{display:flex;gap:6px;margin-top:10px}.btn-row .btn{flex:1}
+
+/* ── Main content ── */
+.content{display:flex;flex-direction:column;overflow:hidden;background:var(--bg)}
+
+/* Network canvas panel */
+.net-panel{position:relative;border-bottom:1px solid var(--border);
+           background:var(--panel);flex-shrink:0}
+.net-panel-head{display:flex;align-items:center;padding:8px 18px;gap:10px;
+                border-bottom:1px solid var(--border)}
+.np-title{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted2)}
+.net-hint{font-size:10px;color:var(--muted);margin-left:auto}
+#netCanvas{display:block;cursor:grab;width:100%;height:200px}
+#netCanvas:active{cursor:grabbing}
+
+/* Resize handle */
+.resize-handle{height:4px;background:transparent;cursor:ns-resize;
+               border-bottom:1px solid var(--border);transition:background .2s}
+.resize-handle:hover{background:var(--accent)}
+
+/* Neuron tooltip */
+.neuron-tip{position:absolute;background:var(--panel2);border:1px solid var(--border2);
+            border-radius:4px;padding:10px 12px;font-size:11px;pointer-events:none;
+            z-index:100;min-width:180px;display:none;box-shadow:0 4px 20px rgba(0,0,0,.5)}
+.nt-title{color:var(--accent);font-weight:600;margin-bottom:6px;font-size:10px;letter-spacing:.08em}
+.nt-row{display:flex;justify-content:space-between;gap:16px;margin-bottom:3px}
+.nt-k{color:var(--muted2);font-size:10px}.nt-v{color:var(--text);font-size:10px}
+.nt-bar-wrap{margin-top:6px}
+.nt-bar-label{font-size:9px;color:var(--muted);margin-bottom:3px}
+.nt-bar-bg{height:3px;background:var(--border);border-radius:2px;margin-bottom:2px}
+.nt-bar{height:3px;border-radius:2px;transition:width .3s}
+
+/* Tab bar */
+.tabs{display:flex;border-bottom:1px solid var(--border);background:var(--panel);flex-shrink:0}
+.tab{padding:10px 20px;font-size:11px;cursor:pointer;color:var(--muted2);
+     border-bottom:2px solid transparent;transition:all .2s;user-select:none}
+.tab.active{color:var(--accent);border-bottom-color:var(--accent)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-badge{display:inline-block;background:var(--accent);color:#000;font-size:8px;
+           padding:1px 5px;border-radius:8px;margin-left:5px;font-weight:600}
+
+.tab-content{flex:1;overflow:hidden;display:none}.tab-content.active{display:flex;flex-direction:column}
+
+/* Training tab */
+.train-tab{overflow-y:auto}
+.train-tab::-webkit-scrollbar{width:3px}
+.train-tab::-webkit-scrollbar-thumb{background:var(--border2)}
+
+.ep-wrap{padding:12px 20px;border-bottom:1px solid var(--border);background:var(--panel)}
+.ep-info{display:flex;justify-content:space-between;margin-bottom:5px}
+.ep-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.ep-count{font-size:11px;color:var(--accent)}
+.pbar-bg{height:3px;background:var(--border);border-radius:2px}
+.pbar{height:3px;background:linear-gradient(90deg,var(--accent),var(--blue));
+      border-radius:2px;width:0%;transition:width .5s}
+.sbar-bg{height:2px;background:var(--border);border-radius:1px;margin-top:3px}
+.sbar{height:2px;background:var(--accent2);border-radius:1px;width:0%;transition:width .3s}
+
+.charts-grid{display:grid;grid-template-columns:1fr 1fr;background:var(--border);gap:1px}
+.chart-box{background:var(--panel);padding:14px 18px}
+.ch-label{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:1px}
+.ch-val{font-size:24px;font-family:'Syne',sans-serif;font-weight:700;color:#fff;letter-spacing:-1px}
+.ch-val span{font-size:12px;color:var(--muted);font-weight:400}
+.ch-wrap{height:80px;margin-top:8px;position:relative}
+
+.log-area{flex:1;padding:12px 20px;overflow-y:auto;min-height:0}
+.log-area::-webkit-scrollbar{width:3px}
+.log-area::-webkit-scrollbar-thumb{background:var(--border2)}
+.log-title{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:8px}
+.log-lines{font-size:10px;line-height:1.8}
+.ll{display:flex;gap:10px}
+.lt{color:var(--muted);flex-shrink:0}
+.lm{color:var(--text)}
+.lm.accent{color:var(--accent)}.lm.amber{color:var(--amber)}.lm.blue{color:var(--blue)}.lm.danger{color:var(--danger)}
+
+/* Predict tab */
+.predict-tab{overflow-y:auto;padding:20px;display:flex;flex-direction:column;gap:16px}
+.predict-tab::-webkit-scrollbar{width:3px}
+.predict-tab::-webkit-scrollbar-thumb{background:var(--border2)}
+
+.predict-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.pred-box{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:14px}
+.pred-box-title{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+
+.draw-wrap{display:flex;flex-direction:column;align-items:center;gap:8px}
+#drawCanvas{cursor:crosshair;border:1px solid var(--border2);border-radius:3px;
+            image-rendering:pixelated;background:#fff}
+.draw-btns{display:flex;gap:6px;width:100%}
+.draw-btns .btn{flex:1;font-size:10px;padding:6px}
+
+.upload-zone{border:2px dashed var(--border2);border-radius:4px;padding:24px;
+             text-align:center;cursor:pointer;transition:all .2s}
+.upload-zone:hover{border-color:var(--accent);background:rgba(0,229,160,.03)}
+.upload-zone input{display:none}
+.uz-icon{font-size:28px;margin-bottom:6px}
+.uz-text{font-size:11px;color:var(--muted2)}
+.uz-hint{font-size:10px;color:var(--muted);margin-top:4px}
+#uploadPreview{max-width:200px;max-height:200px;margin:8px auto;
+               border:1px solid var(--border2);display:none;border-radius:3px}
+
+.pred-result{background:var(--panel);border:1px solid var(--border);border-radius:4px;padding:14px}
+.pr-title{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);margin-bottom:12px}
+.pr-answer{font-size:36px;font-family:'Syne',sans-serif;font-weight:800;color:var(--accent);
+           margin-bottom:12px;text-align:center}
+.pr-answer span{font-size:12px;color:var(--muted);display:block;font-family:'JetBrains Mono';font-weight:400}
+.prob-bars{display:flex;flex-direction:column;gap:5px}
+.pb-row{display:flex;align-items:center;gap:8px}
+.pb-label{font-size:10px;color:var(--muted2);width:20px;text-align:right;flex-shrink:0}
+.pb-bg{flex:1;height:14px;background:var(--border);border-radius:2px;overflow:hidden}
+.pb-fill{height:100%;border-radius:2px;transition:width .5s ease;background:var(--blue)}
+.pb-fill.winner{background:var(--accent)}
+.pb-val{font-size:9px;color:var(--muted2);width:40px;text-align:right;flex-shrink:0}
+
+.custom-input-area{display:flex;flex-direction:column;gap:6px}
+.custom-input-area textarea{width:100%;background:#060710;border:1px solid var(--border);
+  color:var(--text);padding:8px;font-family:inherit;font-size:10px;border-radius:3px;
+  resize:vertical;min-height:80px;outline:none}
+.custom-input-area textarea:focus{border-color:var(--accent)}
+
+.no-model{font-size:12px;color:var(--muted);text-align:center;padding:40px;line-height:2}
+</style>
+</head>
+<body>
+<div class="app">
+<header>
+  <div class="logo">neural<em>.</em>train</div>
+  <div class="hbar"></div>
+  <div class="status-pill" id="statusPill"><div class="dot"></div><span id="statusText">IDLE</span></div>
+</header>
+
+<div class="body">
+
+<!-- ══ SIDEBAR ══ -->
+<div class="sidebar">
+
+  <!-- Dataset -->
+  <div class="acc open" id="acc-ds">
+    <div class="acc-head" onclick="toggleAcc('acc-ds')">
+      <span class="acc-title">Dataset</span><span class="acc-arrow">▶</span>
+    </div>
+    <div class="acc-body">
+      <div class="ds-tabs">
+        <div class="ds-tab active" onclick="switchDS('mnist')">MNIST</div>
+        <div class="ds-tab" onclick="switchDS('custom')">Custom CSV</div>
+      </div>
+      <div class="ds-panel active" id="ds-mnist">
+        <label>Training samples</label>
+        <input type="number" id="numSamples" value="5000" min="100" max="60000" step="500">
+      </div>
+      <div class="ds-panel" id="ds-custom">
+        <label>CSV file <code style="color:var(--accent);font-size:9px">data/custom/</code></label>
+        <select id="csvSelect"><option value="">— no files —</option></select>
+        <label>Max samples (0 = all)</label>
+        <input type="number" id="csvSamples" value="0" min="0" step="100">
+        <div class="hint">Drop <code>.csv</code> in <code>data/custom/</code>.<br>
+          Last col = class label (int, 0-based).<br>Features auto-normalised.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Training -->
+  <div class="acc open" id="acc-tr">
+    <div class="acc-head" onclick="toggleAcc('acc-tr')">
+      <span class="acc-title">Training</span><span class="acc-arrow">▶</span>
+    </div>
+    <div class="acc-body">
+      <label>Epochs</label>
+      <input type="number" id="epochs" value="10" min="1" max="500">
+      <label>Learning rate <span class="rv" id="lrVal">0.0100</span></label>
+      <input type="range" id="lr" min="-4" max="-1" step="0.01" value="-2"
+             oninput="lrVal.textContent=Math.pow(10,+this.value).toFixed(4)">
+      <label>Report every N samples</label>
+      <input type="number" id="reportEvery" value="200" min="10" max="5000" step="10">
+    </div>
+  </div>
+
+  <!-- Architecture -->
+  <div class="acc open" id="acc-ar">
+    <div class="acc-head" onclick="toggleAcc('acc-ar')">
+      <span class="acc-title">Architecture</span><span class="acc-arrow">▶</span>
+    </div>
+    <div class="acc-body">
+      <div class="layers-list" id="layersList"></div>
+      <button class="add-lb" onclick="addLayer()">+ Add Hidden Layer</button>
+    </div>
+  </div>
+
+  <!-- Buttons -->
+  <div class="acc">
+    <div class="acc-body" style="display:block;padding:12px 16px">
+      <div class="btn-row">
+        <button class="btn btn-p" id="trainBtn" onclick="startTraining()">▶ Train</button>
+        <button class="btn btn-d" id="stopBtn"  onclick="stopTraining()" disabled>■ Stop</button>
+      </div>
+    </div>
+  </div>
+</div>
+<!-- ── END SIDEBAR ── -->
+
+<!-- ══ MAIN CONTENT ══ -->
+<div class="content">
+
+  <!-- Zoomable network -->
+  <div class="net-panel" id="netPanel">
+    <div class="net-panel-head">
+      <span class="np-title">Network Architecture</span>
+      <span class="net-hint" id="netHint">Scroll to zoom · Drag to pan · Click neuron for info</span>
+    </div>
+    <canvas id="netCanvas"></canvas>
+    <div class="neuron-tip" id="neuronTip">
+      <div class="nt-title" id="ntTitle">NEURON</div>
+      <div class="nt-row"><span class="nt-k">Layer</span><span class="nt-v" id="ntLayer">—</span></div>
+      <div class="nt-row"><span class="nt-k">Index</span><span class="nt-v" id="ntIndex">—</span></div>
+      <div class="nt-row"><span class="nt-k">Activation</span><span class="nt-v" id="ntAct">—</span></div>
+      <div class="nt-row"><span class="nt-k">Connections in</span><span class="nt-v" id="ntConns">—</span></div>
+      <div class="nt-bar-wrap" id="ntBarWrap">
+        <div class="nt-bar-label">Weight magnitude (top-5 inputs)</div>
+        <div id="ntBars"></div>
+      </div>
+    </div>
+    <div class="resize-handle" id="resizeHandle"></div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('train')">Training</div>
+    <div class="tab" id="predictTab" onclick="switchTab('predict')">
+      Predict <span class="tab-badge" id="predictBadge" style="display:none">✓</span>
+    </div>
+  </div>
+
+  <!-- Training tab -->
+  <div class="tab-content active train-tab" id="tc-train">
+    <div class="ep-wrap">
+      <div class="ep-info">
+        <span class="ep-label">Epoch progress</span>
+        <span class="ep-count" id="epochCount">— / —</span>
+      </div>
+      <div class="pbar-bg"><div class="pbar" id="epochBar"></div></div>
+      <div class="sbar-bg"><div class="sbar" id="stepBar"></div></div>
+    </div>
+    <div class="charts-grid">
+      <div class="chart-box">
+        <div class="ch-label">Loss</div>
+        <div class="ch-val" id="lossVal">—<span> avg/epoch</span></div>
+        <div class="ch-wrap"><canvas id="lossChart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <div class="ch-label">Accuracy</div>
+        <div class="ch-val" id="accVal">—<span>%</span></div>
+        <div class="ch-wrap"><canvas id="accChart"></canvas></div>
+      </div>
+    </div>
+    <div class="log-area">
+      <div class="log-title">System log</div>
+      <div class="log-lines" id="logLines"></div>
+    </div>
+  </div>
+
+  <!-- Predict tab -->
+  <div class="tab-content predict-tab" id="tc-predict">
+    <div id="noModelMsg" class="no-model">
+      Train a model first.<br>The predict panel will unlock after training completes.
+    </div>
+    <div id="predictUI" style="display:none;flex-direction:column;gap:16px">
+      <!-- MNIST drawing -->
+      <div id="mnistInput" style="display:none">
+        <div class="predict-grid">
+          <div class="pred-box">
+            <div class="pred-box-title">Draw a digit (28×28)</div>
+            <div class="draw-wrap">
+              <canvas id="drawCanvas" width="280" height="280"></canvas>
+              <div class="draw-btns">
+                <button class="btn btn-p" onclick="runPredict()">▶ Predict</button>
+                <button class="btn btn-d" onclick="clearDraw()">✕ Clear</button>
+              </div>
+            </div>
+          </div>
+          <div class="pred-box">
+            <div class="pred-box-title">Or upload an image</div>
+            <div class="upload-zone" onclick="document.getElementById('imgUpload').click()">
+              <input type="file" id="imgUpload" accept="image/*" onchange="handleUpload(event)">
+              <div class="uz-icon">📂</div>
+              <div class="uz-text">Click to upload</div>
+              <div class="uz-hint">PNG / JPG / BMP — will be resized to 28×28</div>
+              <img id="uploadPreview">
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- Custom input -->
+      <div id="customInput" style="display:none">
+        <div class="pred-box">
+          <div class="pred-box-title">Feature vector (comma-separated, normalised 0–1)</div>
+          <div class="custom-input-area">
+            <textarea id="customFeats" placeholder="0.12, 0.55, 0.90, …"></textarea>
+            <button class="btn btn-p" style="align-self:flex-start" onclick="runCustomPredict()">▶ Predict</button>
+          </div>
+        </div>
+      </div>
+      <!-- Result -->
+      <div class="pred-result" id="predResult" style="display:none">
+        <div class="pr-title">Prediction</div>
+        <div class="pr-answer" id="prAnswer">—<span id="prConf"></span></div>
+        <div class="prob-bars" id="probBars"></div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- .content -->
+</div><!-- .body -->
+</div><!-- .app -->
+
+<script>
+// ══════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════
+const socket = io();
+let totalEpochs=1, totalSteps=1;
+let lastActivations=null;  // per-layer float arrays from last predict
+let modelReady=false, modelInfo=null;
+let activeDataset='mnist';
+
+// Network canvas state
+const NC = document.getElementById('netCanvas');
+const NCX = NC.getContext('2d');
+let camera={x:0,y:0,s:1};
+let drag={active:false,sx:0,sy:0,cx0:0,cy0:0,moved:false};
+let worldNeurons=[];   // [{li, ni, wx, wy}]
+let netSizes=[];
+let netActTypes=[];
+
+// ══════════════════════════════════════════════════════════
+// ACCORDION
+// ══════════════════════════════════════════════════════════
+function toggleAcc(id){
+  const el=document.getElementById(id);
+  el.classList.toggle('open');
+}
+
+// ══════════════════════════════════════════════════════════
+// SOCKET.IO
+// ══════════════════════════════════════════════════════════
+socket.on('status',      s=>handleStatus(s));
+socket.on('train_event', e=>handleEvent(e));
+socket.on('log',         e=>addLog(e.msg,e.cls||''));
+socket.on('datasets',    e=>populateCSV(e.files));
+socket.on('model_ready', e=>handleModelReady(e));
+
+function handleStatus({state}){
+  const pill=document.getElementById('statusPill');
+  const txt=document.getElementById('statusText');
+  pill.className='status-pill';
+  const running=state==='training'||state==='preparing';
+  if(running) pill.classList.add('running');
+  if(state==='done') pill.classList.add('done');
+  if(state==='error') pill.classList.add('error');
+  txt.textContent=state.toUpperCase();
+  document.getElementById('trainBtn').disabled=running;
+  document.getElementById('stopBtn').disabled=!running;
+}
+
+function handleEvent(e){
+  if(e.type==='config'){
+    totalEpochs=e.epochs; totalSteps=e.samples;
+    addLog(`Config [${e.layers.join('→')}] ${e.epochs} epochs ${e.samples} samples`,'accent');
+    netSizes=e.layers;
+    drawNet();
+  } else if(e.type==='progress'){
+    document.getElementById('stepBar').style.width=(e.step/totalSteps*100)+'%';
+    document.getElementById('epochCount').textContent=
+      `Epoch ${e.epoch}/${totalEpochs} · step ${e.step}/${totalSteps}`;
+  } else if(e.type==='epoch'){
+    document.getElementById('epochBar').style.width=(e.epoch/e.total_epochs*100)+'%';
+    document.getElementById('stepBar').style.width='100%';
+    document.getElementById('epochCount').textContent=`Epoch ${e.epoch}/${e.total_epochs}`;
+    const l=e.loss.toFixed(4), a=(e.accuracy*100).toFixed(1);
+    document.getElementById('lossVal').innerHTML=`${l}<span> avg/epoch</span>`;
+    document.getElementById('accVal').innerHTML=`${a}<span>%</span>`;
+    pushChart(lossChart,e.epoch,e.loss);
+    pushChart(accChart,e.epoch,e.accuracy*100);
+    addLog(`Epoch ${e.epoch}/${e.total_epochs} — loss ${l} — acc ${a}%`,'amber');
+  } else if(e.type==='done'){
+    document.getElementById('epochBar').style.width='100%';
+    addLog('Training complete ✓','accent');
+  }
+}
+
+function handleModelReady(info){
+  modelReady=true; modelInfo=info;
+  netSizes=info.layer_sizes;
+  netActTypes=Array(info.layer_sizes.length).fill(0);
+  drawNet();
+  // unlock predict tab
+  document.getElementById('noModelMsg').style.display='none';
+  const pu=document.getElementById('predictUI');
+  pu.style.display='flex';
+  document.getElementById('predictBadge').style.display='';
+  // show right input type
+  if(info.dataset==='mnist'){
+    document.getElementById('mnistInput').style.display='block';
+    document.getElementById('customInput').style.display='none';
+  } else {
+    document.getElementById('mnistInput').style.display='none';
+    document.getElementById('customInput').style.display='block';
+  }
+  addLog(`Model loaded — ${info.layer_sizes.join('→')} — ready to predict`,'blue');
+}
+
+// ══════════════════════════════════════════════════════════
+// DATASET TABS
+// ══════════════════════════════════════════════════════════
+function switchDS(mode){
+  activeDataset=mode;
+  document.querySelectorAll('.ds-tab').forEach((t,i)=>{
+    t.classList.toggle('active',(i===0&&mode==='mnist')||(i===1&&mode==='custom'));
+  });
+  document.getElementById('ds-mnist').classList.toggle('active',mode==='mnist');
+  document.getElementById('ds-custom').classList.toggle('active',mode==='custom');
+  if(mode==='custom') fetch('/api/datasets').then(r=>r.json()).then(d=>populateCSV(d.files));
+}
+function populateCSV(files){
+  const sel=document.getElementById('csvSelect');
+  sel.innerHTML=files.length
+    ? files.map(f=>`<option value="${f}">${f}</option>`).join('')
+    : '<option value="">— drop .csv in data/custom/ —</option>';
+}
+
+// ══════════════════════════════════════════════════════════
+// LAYER BUILDER
+// ══════════════════════════════════════════════════════════
+const ACTS=[{v:0,l:'ReLU'},{v:1,l:'Sigmoid'},{v:2,l:'Tanh'},{v:3,l:'Linear'}];
+let hiddenLayers=[{size:128,activation:0},{size:64,activation:0}];
+
+function renderLayers(){
+  const list=document.getElementById('layersList');
+  list.innerHTML='';
+  list.innerHTML+=`<div class="lr lrf"><span class="li">0</span>
+    <input value="input" readonly><select disabled><option>Linear·Input</option></select></div>`;
+  hiddenLayers.forEach((l,i)=>{
+    const opts=ACTS.map(a=>`<option value="${a.v}"${a.v===l.activation?' selected':''}>${a.l}</option>`).join('');
+    list.innerHTML+=`<div class="lr"><span class="li">${i+1}</span>
+      <input type="number" value="${l.size}" min="1" max="4096"
+             onchange="hiddenLayers[${i}].size=+this.value;drawNet()">
+      <select onchange="hiddenLayers[${i}].activation=+this.value">${opts}</select>
+      <button class="xb" onclick="removeLayer(${i})">×</button></div>`;
+  });
+  list.innerHTML+=`<div class="lr lrf"><span class="li">${hiddenLayers.length+1}</span>
+    <input value="output" readonly><select disabled><option>Softmax·Output</option></select></div>`;
+  drawNet();
+}
+function addLayer(){ hiddenLayers.push({size:64,activation:0}); renderLayers(); }
+function removeLayer(i){ hiddenLayers.splice(i,1); renderLayers(); }
+
+// ══════════════════════════════════════════════════════════
+// NETWORK CANVAS — zoomable / pannable / clickable
+// ══════════════════════════════════════════════════════════
+const MAX_NODES=14, NODE_R=6, NODE_SPACING=16, WORLD_W=2000, WORLD_H=400;
+
+function initCamera(){
+  const w=NC.clientWidth, h=NC.clientHeight;
+  // fit WORLD_W in canvas width with some margin
+  const s=Math.min((w-80)/WORLD_W, (h-60)/WORLD_H);
+  camera={x:w/2-WORLD_W*s/2, y:h/2-WORLD_H*s/2, s};
+}
+
+function resizeCanvas(){
+  const pr=devicePixelRatio||1;
+  const w=NC.clientWidth, h=NC.clientHeight;
+  NC.width=w*pr; NC.height=h*pr;
+  NCX.scale(pr,pr);
+  drawNet();
+}
+
+function drawNet(){
+  const W=NC.clientWidth, H=NC.clientHeight;
+  NCX.clearRect(0,0,W,H);
+
+  const sizes = netSizes.length>0 ? netSizes
+    : [activeDataset==='mnist'?784:64, ...hiddenLayers.map(l=>l.size), 10];
+
+  if(sizes.length<2){return;}
+  const nL=sizes.length;
+  worldNeurons=[];
+
+  // World layout
+  const lxW = i=> 60 + i*(WORLD_W-120)/(nL-1);
+
+  // Compute neuron world positions
+  const nodePositions=sizes.map((sz,li)=>{
+    const n=Math.min(sz,MAX_NODES);
+    const x=lxW(li);
+    return Array.from({length:n},(_,j)=>({
+      li,ni:j,wx:x,wy:WORLD_H/2+(j-(n-1)/2)*NODE_SPACING
+    }));
+  });
+  worldNeurons=nodePositions.flat();
+
+  // to screen coords
+  const ws=(wx,wy)=>({sx:camera.x+wx*camera.s, sy:camera.y+wy*camera.s});
+
+  NCX.save();
+
+  // connections
+  for(let l=0;l<nL-1;l++){
+    const pts1=nodePositions[l], pts2=nodePositions[l+1];
+    pts1.forEach(a=>{
+      const {sx:x1,sy:y1}=ws(a.wx,a.wy);
+      if(x1<-10||x1>W+10) return;
+      pts2.forEach(b=>{
+        const {sx:x2,sy:y2}=ws(b.wx,b.wy);
+        NCX.strokeStyle='rgba(26,31,46,0.9)';
+        NCX.lineWidth=.5;
+        NCX.beginPath(); NCX.moveTo(x1,y1); NCX.lineTo(x2,y2); NCX.stroke();
+      });
+    });
+  }
+
+  // nodes
+  nodePositions.forEach((pts,li)=>{
+    const sz=sizes[li];
+    const isIn=li===0, isOut=li===nL-1;
+    const baseColor=isIn?'#4da6ff':isOut?'#ff6b35':'#00e5a0';
+
+    pts.forEach(({ni,wx,wy})=>{
+      const {sx,sy}=ws(wx,wy);
+      if(sx<-20||sx>W+20||sy<-20||sy>H+20) return;
+
+      // activation colour if we have inference data
+      let fillAlpha=0.12, strokeColor=baseColor;
+      if(lastActivations && lastActivations[li]){
+        const vals=lastActivations[li];
+        const v=ni<vals.length?vals[ni]:0;
+        const mn=Math.min(...vals), mx=Math.max(...vals);
+        const t=mx>mn?(v-mn)/(mx-mn):0;
+        fillAlpha=0.05+t*0.5;
+        const r=isIn?77:isOut?255:0;
+        const g=isIn?166:isOut?107:229;
+        const b=isIn?255:isOut?53:160;
+        strokeColor=`rgba(${r+Math.round((255-r)*t)},${g+Math.round((255-g)*t*0.3)},${b-Math.round(b*t*0.5)},1)`;
+      }
+
+      const r=Math.max(4, NODE_R*camera.s);
+      NCX.beginPath(); NCX.arc(sx,sy,r,0,Math.PI*2);
+      NCX.fillStyle=baseColor+Math.round(fillAlpha*255).toString(16).padStart(2,'0');
+      NCX.fill();
+      NCX.strokeStyle=strokeColor; NCX.lineWidth=1.5; NCX.stroke();
+    });
+
+    // overflow indicator
+    if(sz>MAX_NODES){
+      const {sx,sy}=ws(lxW(li), WORLD_H/2+(MAX_NODES-1)/2*NODE_SPACING+20);
+      NCX.fillStyle='#3d4560'; NCX.font=`9px JetBrains Mono`; NCX.textAlign='center';
+      NCX.fillText(`+${sz-MAX_NODES}`,sx,sy);
+    }
+    // size label
+    {
+      const {sx,sy}=ws(lxW(li), WORLD_H-8);
+      NCX.fillStyle='#3d4560'; NCX.font=`9px JetBrains Mono`; NCX.textAlign='center';
+      NCX.fillText(sz,sx,sy);
+    }
+  });
+
+  NCX.restore();
+}
+
+// Mouse events
+NC.addEventListener('wheel',e=>{
+  e.preventDefault();
+  const rect=NC.getBoundingClientRect();
+  const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+  const factor=e.deltaY<0?1.12:0.88;
+  camera.x=mx-(mx-camera.x)*factor;
+  camera.y=my-(my-camera.y)*factor;
+  camera.s*=factor;
+  camera.s=Math.max(0.1,Math.min(5,camera.s));
+  drawNet();
+},{passive:false});
+
+NC.addEventListener('mousedown',e=>{
+  drag={active:true,sx:e.clientX,sy:e.clientY,cx0:camera.x,cy0:camera.y,moved:false};
+});
+window.addEventListener('mousemove',e=>{
+  if(!drag.active)return;
+  const dx=e.clientX-drag.sx, dy=e.clientY-drag.sy;
+  if(Math.abs(dx)+Math.abs(dy)>3) drag.moved=true;
+  camera.x=drag.cx0+dx; camera.y=drag.cy0+dy;
+  drawNet();
+});
+window.addEventListener('mouseup',e=>{
+  if(!drag.active)return;
+  if(!drag.moved){
+    // click — hit test neurons
+    const rect=NC.getBoundingClientRect();
+    const mx=e.clientX-rect.left, my=e.clientY-rect.top;
+    hitTestNeuron(mx,my,e.clientX,e.clientY);
+  }
+  drag.active=false;
+});
+
+// Close tip on outside click
+document.addEventListener('click',e=>{
+  if(!e.target.closest('#netCanvas')&&!e.target.closest('#neuronTip'))
+    document.getElementById('neuronTip').style.display='none';
+});
+
+function hitTestNeuron(mx,my,pageX,pageY){
+  const tip=document.getElementById('neuronTip');
+  const sizes=netSizes.length>0?netSizes:[activeDataset==='mnist'?784:64,...hiddenLayers.map(l=>l.size),10];
+  const nL=sizes.length;
+  const lxW=i=>60+i*(WORLD_W-120)/(nL-1);
+
+  for(const {li,ni,wx,wy} of worldNeurons){
+    const sx=camera.x+wx*camera.s, sy=camera.y+wy*camera.s;
+    const r=Math.max(4,NODE_R*camera.s)+3;
+    if(Math.hypot(mx-sx,my-sy)<r){
+      showNeuronTip(li,ni,sizes,pageX,pageY);
+      return;
+    }
+  }
+  tip.style.display='none';
+}
+
+function showNeuronTip(li,ni,sizes,px,py){
+  const tip=document.getElementById('neuronTip');
+  const names=['RELU','SIGMOID','TANH','LINEAR','SOFTMAX'];
+  const isIn=li===0,isOut=li===sizes.length-1;
+  const role=isIn?'Input':isOut?'Output':'Hidden';
+  document.getElementById('ntTitle').textContent=`${role} Layer ${li} · Neuron ${ni}`;
+  document.getElementById('ntLayer').textContent=`${li} (${role})`;
+  document.getElementById('ntIndex').textContent=ni;
+
+  // Activation value if we have it
+  let actVal='—';
+  if(lastActivations&&lastActivations[li]&&ni<lastActivations[li].length)
+    actVal=lastActivations[li][ni].toFixed(4);
+  document.getElementById('ntAct').textContent=actVal;
+  document.getElementById('ntConns').textContent=li>0?sizes[li-1]:'—';
+
+  // Weight mini-bars if model loaded and not input layer
+  const barsEl=document.getElementById('ntBars');
+  barsEl.innerHTML='';
+  const bwrap=document.getElementById('ntBarWrap');
+  if(modelInfo&&li>0&&window._modelWeights){
+    const w=window._modelWeights[li-1]; // [out, in] shape flattened
+    const inSize=sizes[li-1];
+    const row=Array.from({length:inSize},(_,j)=>({j,v:Math.abs(w[ni*inSize+j])}));
+    row.sort((a,b)=>b.v-a.v);
+    const top=row.slice(0,5), maxV=top[0]?.v||1;
+    top.forEach(({j,v})=>{
+      const pct=(v/maxV*100).toFixed(0);
+      barsEl.innerHTML+=`<div class="nt-bar-bg"><div class="nt-bar" style="width:${pct}%;background:var(--accent)"></div></div>`;
+    });
+    bwrap.style.display='';
+  } else {
+    bwrap.style.display='none';
+  }
+
+  // Position tip
+  const canRect=NC.getBoundingClientRect();
+  const bodyRect=document.body.getBoundingClientRect();
+  let tx=px-bodyRect.left+12, ty=py-bodyRect.top-10;
+  tip.style.display='block';
+  const tw=tip.offsetWidth, th=tip.offsetHeight;
+  if(tx+tw>window.innerWidth-10) tx=px-bodyRect.left-tw-12;
+  if(ty+th>window.innerHeight-10) ty=py-bodyRect.top-th;
+  tip.style.left=tx+'px'; tip.style.top=ty+'px';
+}
+
+// ══════════════════════════════════════════════════════════
+// RESIZE HANDLE (drag net panel height)
+// ══════════════════════════════════════════════════════════
+(()=>{
+  const handle=document.getElementById('resizeHandle');
+  const panel=document.getElementById('netPanel');
+  let rDrag=false,startY=0,startH=0;
+  handle.addEventListener('mousedown',e=>{
+    rDrag=true; startY=e.clientY; startH=NC.clientHeight; e.preventDefault();
+  });
+  window.addEventListener('mousemove',e=>{
+    if(!rDrag)return;
+    const newH=Math.max(80,Math.min(600,startH+(e.clientY-startY)));
+    NC.style.height=newH+'px';
+    resizeCanvas();
+  });
+  window.addEventListener('mouseup',()=>{ rDrag=false; });
+})();
+
+// ══════════════════════════════════════════════════════════
+// TAB SWITCHING
+// ══════════════════════════════════════════════════════════
+function switchTab(name){
+  document.querySelectorAll('.tab').forEach((t,i)=>{
+    t.classList.toggle('active',(i===0&&name==='train')||(i===1&&name==='predict'));
+  });
+  document.getElementById('tc-train').classList.toggle('active',name==='train');
+  document.getElementById('tc-predict').classList.toggle('active',name==='predict');
+}
+
+// ══════════════════════════════════════════════════════════
+// CHARTS
+// ══════════════════════════════════════════════════════════
+function mkChart(id,color,fill){
+  return new Chart(document.getElementById(id).getContext('2d'),{
+    type:'line',
+    data:{labels:[],datasets:[{data:[],borderColor:color,backgroundColor:fill,
+          borderWidth:1.5,pointRadius:0,tension:0.4,fill:true}]},
+    options:{responsive:true,maintainAspectRatio:false,animation:false,
+      plugins:{legend:{display:false}},
+      scales:{x:{display:false},
+              y:{display:true,grid:{color:'#1a1f2e'},
+                 ticks:{color:'#3d4560',font:{size:9,family:'JetBrains Mono'}}}}}
+  });
+}
+const lossChart=mkChart('lossChart','#00e5a0','rgba(0,229,160,0.05)');
+const accChart =mkChart('accChart', '#4da6ff','rgba(77,166,255,0.05)');
+function pushChart(c,x,y){ c.data.labels.push(x); c.data.datasets[0].data.push(y); c.update('none'); }
+
+// ══════════════════════════════════════════════════════════
+// LOG
+// ══════════════════════════════════════════════════════════
+function addLog(msg,cls=''){
+  const t=new Date().toTimeString().slice(0,8);
+  const div=document.getElementById('logLines');
+  const el=document.createElement('div'); el.className='ll';
+  el.innerHTML=`<span class="lt">${t}</span><span class="lm ${cls}">${msg}</span>`;
+  div.appendChild(el);
+  div.parentElement.scrollTop=div.parentElement.scrollHeight;
+  while(div.children.length>400) div.removeChild(div.firstChild);
+}
+
+// ══════════════════════════════════════════════════════════
+// TRAINING
+// ══════════════════════════════════════════════════════════
+function startTraining(){
+  lossChart.data.labels=[]; lossChart.data.datasets[0].data=[]; lossChart.update('none');
+  accChart.data.labels=[];  accChart.data.datasets[0].data=[];  accChart.update('none');
+  document.getElementById('epochBar').style.width='0%';
+  document.getElementById('stepBar').style.width='0%';
+
+  const lr=Math.pow(10,+document.getElementById('lr').value);
+  let dataset,num_samples;
+  if(activeDataset==='mnist'){
+    dataset='mnist'; num_samples=+document.getElementById('numSamples').value;
+  } else {
+    dataset=document.getElementById('csvSelect').value;
+    num_samples=+document.getElementById('csvSamples').value||null;
+    if(!dataset){addLog('Select a CSV file first.','danger');return;}
+  }
+  const config={dataset,num_samples,epochs:+document.getElementById('epochs').value,lr,
+    report_every:+document.getElementById('reportEvery').value,hidden_layers:hiddenLayers};
+  addLog(`Starting — ${dataset} lr=${lr.toFixed(5)} epochs=${config.epochs}`,'accent');
+  fetch('/api/start',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(config)})
+    .then(r=>r.json()).then(d=>{ if(d.error) addLog('Error: '+d.error,'danger'); });
+}
+function stopTraining(){
+  fetch('/api/stop',{method:'POST'}).then(()=>addLog('Stop requested…','amber'));
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAWING CANVAS (MNIST)
+// ══════════════════════════════════════════════════════════
+const DC=document.getElementById('drawCanvas');
+const DCX=DC.getContext('2d');
+let drawing=false;
+// white background
+DCX.fillStyle='#ffffff'; DCX.fillRect(0,0,280,280);
+
+DC.addEventListener('mousedown',e=>{ drawing=true; doDraw(e); });
+DC.addEventListener('mousemove',e=>{ if(drawing) doDraw(e); });
+DC.addEventListener('mouseup',  ()=>{ drawing=false; });
+DC.addEventListener('mouseleave',()=>{ drawing=false; });
+DC.addEventListener('touchstart',e=>{ drawing=true; doDraw(e.touches[0]); e.preventDefault(); },{passive:false});
+DC.addEventListener('touchmove', e=>{ doDraw(e.touches[0]); e.preventDefault(); },{passive:false});
+DC.addEventListener('touchend',  ()=>{ drawing=false; });
+
+function doDraw(e){
+  const r=DC.getBoundingClientRect();
+  const x=e.clientX-r.left, y=e.clientY-r.top;
+  DCX.fillStyle='#000000';
+  DCX.beginPath(); DCX.arc(x,y,10,0,Math.PI*2); DCX.fill();
+}
+function clearDraw(){
+  DCX.fillStyle='#ffffff'; DCX.fillRect(0,0,280,280);
+  document.getElementById('predResult').style.display='none';
+  lastActivations=null; drawNet();
+}
+
+function getPixels28(){
+  // downsample 280→28
+  const tmp=document.createElement('canvas'); tmp.width=28; tmp.height=28;
+  const tx=tmp.getContext('2d');
+  tx.drawImage(DC,0,0,28,28);
+  const d=tx.getImageData(0,0,28,28).data;
+  const pixels=[];
+  for(let i=0;i<28*28;i++){
+    const r=d[i*4],g=d[i*4+1],b=d[i*4+2];
+    const gray=(r+g+b)/3;
+    pixels.push((255-gray)/255); // invert: white bg → 0, black stroke → 1
+  }
+  return pixels;
+}
+
+async function runPredict(){
+  const pixels=getPixels28();
+  const res=await fetch('/api/predict',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({pixels})});
+  const data=await res.json();
+  if(data.error){addLog('Predict error: '+data.error,'danger');return;}
+  showPredResult(data);
+}
+
+// ══════════════════════════════════════════════════════════
+// UPLOAD IMAGE
+// ══════════════════════════════════════════════════════════
+function handleUpload(e){
+  const file=e.target.files[0]; if(!file)return;
+  const img=new Image();
+  img.onload=()=>{
+    // draw uploaded image into draw canvas
+    DCX.fillStyle='#ffffff'; DCX.fillRect(0,0,280,280);
+    // aspect-fit
+    const scale=Math.min(280/img.width,280/img.height);
+    const w=img.width*scale, h=img.height*scale;
+    DCX.drawImage(img,(280-w)/2,(280-h)/2,w,h);
+    // show preview
+    const prev=document.getElementById('uploadPreview');
+    prev.src=URL.createObjectURL(file); prev.style.display='block';
+    runPredict();
+  };
+  img.src=URL.createObjectURL(file);
+}
+
+// ══════════════════════════════════════════════════════════
+// CUSTOM PREDICT
+// ══════════════════════════════════════════════════════════
+async function runCustomPredict(){
+  const raw=document.getElementById('customFeats').value;
+  const pixels=raw.split(',').map(s=>parseFloat(s.trim())).filter(v=>!isNaN(v));
+  const res=await fetch('/api/predict',{method:'POST',
+    headers:{'Content-Type':'application/json'},body:JSON.stringify({pixels})});
+  const data=await res.json();
+  if(data.error){addLog('Predict error: '+data.error,'danger');return;}
+  showPredResult(data);
+}
+
+// ══════════════════════════════════════════════════════════
+// SHOW PREDICTION RESULT
+// ══════════════════════════════════════════════════════════
+function showPredResult(data){
+  lastActivations=data.activations;
+  drawNet(); // redraw with activation colours
+
+  const probs=data.probabilities;
+  const pred=data.predicted;
+  const conf=(probs[pred]*100).toFixed(1);
+
+  document.getElementById('prAnswer').innerHTML=
+    `${pred}<span>Confidence: ${conf}%</span>`;
+
+  const bars=document.getElementById('probBars');
+  bars.innerHTML='';
+  const sorted=probs.map((p,i)=>({p,i})).sort((a,b)=>b.p-a.p);
+  // show all classes sorted by prob
+  sorted.forEach(({p,i})=>{
+    const pct=(p*100).toFixed(1);
+    bars.innerHTML+=`<div class="pb-row">
+      <span class="pb-label">${i}</span>
+      <div class="pb-bg"><div class="pb-fill${i===pred?' winner':''}"
+           style="width:${(p*100).toFixed(2)}%"></div></div>
+      <span class="pb-val">${pct}%</span>
+    </div>`;
+  });
+
+  document.getElementById('predResult').style.display='block';
+  switchTab('predict');
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════
+window.addEventListener('resize',()=>resizeCanvas());
+const ro=new ResizeObserver(()=>resizeCanvas());
+ro.observe(NC);
+
+renderLayers();
+setTimeout(()=>{ resizeCanvas(); initCamera(); drawNet(); },50);
+addLog('Ready. Configure and press Train.','');
+</script>
+</body>
+</html>

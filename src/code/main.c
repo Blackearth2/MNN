@@ -1,101 +1,101 @@
-#include "layer.h"
-#include "network.h"
-#include "image/image.h"
+/*
+ * main.c
+ * Usage:
+ *   nn_train <data.bin> <epochs> <lr> <report_every> <model_save_path>
+ *            <act0..N> <size0..N>
+ *
+ * Pass "" as model_save_path to skip saving.
+ */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <time.h>
+#include "network.h"
 
+static void die(const char* m) { fprintf(stderr,"ERROR: %s\n",m); exit(1); }
 
-#define NUM_SAMPLES 10      // Number of training samples
-#define IMAGE_SIZE 1024     // 32x32 image flattened into 1024 elements
-#define NUM_CLASSES 9      // Number of classes (letters, for example)
-
-void generateRandomData(float** trainingData, float** targets, int numSamples, int inputSize, int numClasses) {
-    for (int i = 0; i < numSamples; i++) {
-        // Generate random image data (flattened 32x32)
-        for (int j = 0; j < inputSize; j++) {
-            trainingData[i][j] = (float)rand() / RAND_MAX;  // Random float between 0 and 1
-        }
-
-        // Generate valid one-hot encoded target vector
-        int targetClass = rand() % numClasses;  // Random class (index for one-hot)
-        for (int k = 0; k < numClasses; k++) {
-            targets[i][k] = (k == targetClass) ? 1.0f : 0.0f;  // Only one class is 1.0, others are 0.0
-        }
+int main(int argc, char* argv[]) {
+    if (argc < 8) {
+        fprintf(stderr,
+            "Usage: nn_train <data.bin> <epochs> <lr> <report_every>"
+            " <save_path> <act0..N> <size0..N>\n");
+        return 1;
     }
-}
+    srand((unsigned)time(NULL));
 
+    const char* data_path  = argv[1];
+    int   epochs           = atoi(argv[2]);
+    float lr               = (float)atof(argv[3]);
+    int   report_every     = atoi(argv[4]);
+    const char* save_path  = argv[5];  /* "" to skip */
 
-int main(){
+    int remaining = argc - 6;
+    if (remaining % 2 != 0) die("odd number of layer args");
+    int num_layers = remaining / 2;
 
-    network* Network = malloc(sizeof(network));
-    int nbLayers = 3;
-    Network->layers = malloc(nbLayers*sizeof(Layer));
-    Network->nbLayers = nbLayers;
-    ActivationType activation[] = {RELU,RELU,SIGMOID};
-    int inputs_size[] = {0,784,512};
-    int output_size[] = {784,512,9};
+    ActivationType* acts  = malloc(num_layers * sizeof(ActivationType));
+    int*            sizes = malloc(num_layers * sizeof(int));
+    for (int i=0; i<num_layers; i++) acts[i]  = (ActivationType)atoi(argv[6+i]);
+    for (int i=0; i<num_layers; i++) sizes[i] = atoi(argv[6+num_layers+i]);
 
+    /* Load binary data */
+    FILE* f = fopen(data_path,"rb");
+    if (!f) { perror(data_path); return 1; }
 
-    for (int i = 0; i < nbLayers; i++)
-    {
-        int have_bias = i == 0 ? 0 : 1;
-        int have_weights = i == 0 ? 0 : 1;
+    int num_samples, input_size, output_size;
+    if (fread(&num_samples, sizeof(int),1,f) != 1 ||
+        fread(&input_size,  sizeof(int),1,f) != 1 ||
+        fread(&output_size, sizeof(int),1,f) != 1) die("bad header");
 
-        Network->layers[i] = malloc(sizeof(Layer));
-        initialize_layer(Network->layers[i],inputs_size[i],output_size[i],have_bias,have_weights,activation[i]);
-    }
-    printNetworkInfo(Network);
-    printf("\n");
-    srand(time(NULL));  // Seed the random number generator
+    float* flat_in  = malloc((size_t)num_samples * input_size  * sizeof(float));
+    float* flat_lbl = malloc((size_t)num_samples * output_size * sizeof(float));
+    if (!flat_in || !flat_lbl) die("out of memory");
 
-    // Allocate memory for training data and targets
-    float** trainingData = (float**)malloc(NUM_SAMPLES * sizeof(float*));
-    float** targets = (float**)malloc(NUM_SAMPLES * sizeof(float*));
+    if (fread(flat_in,  sizeof(float), (size_t)num_samples*input_size,  f) != (size_t)num_samples*input_size  ||
+        fread(flat_lbl, sizeof(float), (size_t)num_samples*output_size, f) != (size_t)num_samples*output_size)
+        die("truncated data file");
+    fclose(f);
 
-    
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-        trainingData[i] = (float*)malloc(IMAGE_SIZE * sizeof(float));  // 32x32 image
-        targets[i] = (float*)malloc(NUM_CLASSES * sizeof(float));      // 26-class one-hot target
-        if(!targets){
-            printf("error during malloc\n");
-        }
+    float** inputs = malloc(num_samples*sizeof(float*));
+    float** labels = malloc(num_samples*sizeof(float*));
+    for (int i=0; i<num_samples; i++) {
+        inputs[i] = flat_in  + (size_t)i*input_size;
+        labels[i] = flat_lbl + (size_t)i*output_size;
     }
 
-    // Generate random data
-    //generateRandomData(trainingData, targets, NUM_SAMPLES, IMAGE_SIZE, NUM_CLASSES);
-    loadFile("/home/amaury/projectPerso/MNN/src/resources/train.csv",trainingData,targets,inputs_size[0],NUM_SAMPLES);
+    g_learning_rate = lr;
 
-    /*// Print a sample of the data for verification
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-        printf("Sample %d:\n", i + 1);
-        
-        printf("Image: ");
-        for (int j = 0; j < 10; j++) {  // Print only the first 10 pixels for brevity
-            printf("%.2f ", trainingData[i][j]);
-        }
-        printf("\n");
-
-        printf("Target: ");
-        for (int k = 0; k < NUM_CLASSES; k++) {
-            printf("%.1f ", targets[i][k]);
-        }
-        printf("\n\n");
-    }*/
-
-
-
-    trainNetwork(Network,1000,trainingData,targets,NUM_SAMPLES);
-
-
-    freeNetwork(Network);
-    for (int i = 0; i < NUM_SAMPLES; i++) {
-        free(trainingData[i]);
-        free(targets[i]);
+    /*
+     * BUG FIX: sizes[] = [input, h1, h2, ..., output]
+     * Layer i must have:
+     *   input_size  = sizes[i-1]   (previous layer's output count)
+     *   output_size = sizes[i]     (this layer's neuron count)
+     * Passing sizes,sizes made every layer a SQUARE matrix —
+     * the network was blind to all but the first sizes[i] inputs.
+     */
+    int* in_sizes  = malloc(num_layers * sizeof(int));
+    int* out_sizes = malloc(num_layers * sizeof(int));
+    in_sizes[0] = out_sizes[0] = sizes[0];   /* input layer: no weights, both = input_size */
+    for (int i = 1; i < num_layers; i++) {
+        in_sizes[i]  = sizes[i-1];  /* previous layer's neuron count */
+        out_sizes[i] = sizes[i];    /* this layer's neuron count     */
     }
-    free(trainingData);
-    free(targets);
 
+    /* Sanity check — print resolved architecture to stderr */
+    fprintf(stderr, "Architecture:\n");
+    for (int i = 0; i < num_layers; i++)
+        fprintf(stderr, "  layer %d: %d → %d (act=%d)\n",
+                i, in_sizes[i], out_sizes[i], (int)acts[i]);
 
+    network* net = malloc(sizeof(network));
+    initializeNetwork(net, num_layers, acts, in_sizes, out_sizes);
+
+    trainNetwork(net, epochs, inputs, labels, num_samples, report_every, save_path);
+
+    freeNetwork(net);
+    free(flat_in); free(flat_lbl);
+    free(inputs);  free(labels);
+    free(acts); free(sizes);
+    free(in_sizes); free(out_sizes);
     return 0;
 }
