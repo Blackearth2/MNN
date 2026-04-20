@@ -1,25 +1,14 @@
-CC = gcc
-CFLAGS = -Wall -Wextra -Werror -g -fsanitize=address -Ineural_network -Iimage
-LDFLAGS = -lm
-TARGET = nn_model
+CC     = gcc
+CFLAGS = -O2 -Wall -Wextra -std=c11
+LIBS   = -lm
 
-# Object files with proper paths
-OBJECTS = main.o neural_network/layer.o neural_network/network.o image/image.o
+SRC = layer.c network.c main.c
+BIN = nn_train
 
-$(TARGET): $(OBJECTS)
-	$(CC) $(CFLAGS) $(OBJECTS) -o $(TARGET) $(LDFLAGS)
+all: $(BIN)
 
-main.o: main.c neural_network/layer.h neural_network/network.h
-	$(CC) $(CFLAGS) -c main.c -o main.o
+$(BIN): $(SRC) layer.h network.h
+	$(CC) $(CFLAGS) -o $@ $(SRC) $(LIBS)
 
-neural_network/layer.o: neural_network/layer.c neural_network/layer.h
-	$(CC) $(CFLAGS) -c neural_network/layer.c -o neural_network/layer.o
-
-neural_network/network.o: neural_network/network.c neural_network/network.h
-	$(CC) $(CFLAGS) -c neural_network/network.c -o neural_network/network.o
-
-image/image.o: image/image.c image/image.h
-	$(CC) $(CFLAGS) -c image/image.c -o image/image.o
-	
 clean:
-	rm -f $(TARGET) main.o neural_network/*.o
+	rm -f $(BIN)
